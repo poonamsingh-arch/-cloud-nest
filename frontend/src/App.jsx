@@ -1,122 +1,281 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useNavigate } from "react-router-dom";
+
+import { useState, useEffect } from "react";
+
+
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+const [loginEmail, setLoginEmail] = useState("");
+const [loginPassword, setLoginPassword] = useState("");
+
+
+const navigate = useNavigate();
+
+  const [users, setUsers] = useState([]);
+  const [editingId, setEditingId] = useState(null);
+
+  const getUsers = async () => {
+    try {
+      const response = await fetch("http://localhost:3000/users");
+      const data = await response.json();
+      setUsers(data);
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
+  useEffect(() => {
+    getUsers();
+  }, []);
+
+  const registerUser = async () => {
+    try {
+      const response = await fetch(
+        "http://localhost:3000/register",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name,
+            email,
+            password,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      alert(data.message);
+
+      setName("");
+      setEmail("");
+      setPassword("");
+
+      getUsers();
+    } catch (error) {
+      console.log(error);
+      alert("Error");
+    }
+  };
+
+
+const loginUser = async () => {
+  try {
+    const response = await fetch(
+      "http://localhost:3000/login",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: loginEmail,
+          password: loginPassword,
+        }),
+      }
+    );
+
+    const data = await response.json();
+
+    alert(data.message);
+
+    if (data.token) {
+      localStorage.setItem(
+        "token",
+        data.token
+      );
+
+    setLoginEmail("");
+    setLoginPassword("");  
+
+
+   
+      alert("Login Successful");
+
+     navigate("/dashboard");
+
+    }
+  } catch (error) {
+    console.log(error);
+  }
+};
+
+
+
+
+
+
+
+
+
+
+  const updateUser = async () => {
+    try {
+      const response = await fetch(
+        `http://localhost:3000/users/${editingId}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name,
+            email,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      alert(data.message);
+
+      setName("");
+      setEmail("");
+      setPassword("");
+      setEditingId(null);
+
+      getUsers();
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
+  const deleteUser = async (id) => {
+    try {
+      await fetch(
+        `http://localhost:3000/users/${id}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      getUsers();
+    } catch (error) {
+      console.log(error);
+    }
+  };
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
+    <div style={{ padding: "20px" }}>
+      <h1>CloudNest</h1>
+
+      <input
+        type="text"
+        placeholder="Enter Name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+      />
+
+      <br />
+      <br />
+
+      <input
+        type="email"
+        placeholder="Enter Email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+      />
+
+      <br />
+      <br />
+
+      <input
+        type="password"
+        placeholder="Enter Password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+      />
+
+      <br />
+      <br />
+
+      <button
+        onClick={
+          editingId
+            ? updateUser
+            : registerUser
+        }
+      >
+        {editingId ? "Update User" : "Register"}
+      </button>
+
+        
+
+<hr />
+
+<h2>Login</h2>
+
+<input
+  type="email"
+  placeholder="Login Email"
+  value={loginEmail}
+  onChange={(e) =>
+    setLoginEmail(e.target.value)
+  }
+/>
+
+<br />
+<br />
+
+<input
+  type="password"
+  placeholder="Login Password"
+  value={loginPassword}
+  onChange={(e) =>
+    setLoginPassword(e.target.value)
+  }
+/>
+
+<br />
+<br />
+
+<button onClick={loginUser}>
+  Login
+</button>
+
+
+
+
+
+
+      <hr />
+
+      <h2>Registered Users</h2>
+
+      {users.map((user) => (
+        <div key={user._id}>
           <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
+            {user.name} - {user.email}
           </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
 
-      <div className="ticks"></div>
+          <button
+            onClick={() => {
+              setName(user.name);
+              setEmail(user.email);
+              setEditingId(user._id);
+            }}
+          >
+            Edit
+          </button>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+          <button
+            onClick={() =>
+              deleteUser(user._id)
+            }
+          >
+            Delete
+          </button>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+          <hr />
+        </div>
+      ))}
+    </div>
+  );
 }
 
-export default App
+export default App;
