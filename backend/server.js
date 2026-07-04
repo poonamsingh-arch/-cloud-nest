@@ -4,6 +4,7 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const multer = require("multer");
+const fs = require("fs");
 const { PdfReader } = require("pdfreader");
 const Groq = require("groq-sdk");
 require("dotenv").config();
@@ -14,33 +15,49 @@ const Document = require("./models/Document");
 const app = express();
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// ======================
+// Simple text splitter
+function splitTextIntoChunks(text, chunkSize = 1000, overlap = 200) {
+  const chunks = [];
+  let start = 0;
+  while (start < text.length) {
+    const end = Math.min(start + chunkSize, text.length);
+    chunks.push(text.slice(start, end));
+    start += chunkSize - overlap;
+  }
+  return chunks;
+}
+
+// Read PDF using pdfreader
+function readPDF(pdfPath) {
+  return new Promise((resolve, reject) => {
+    let text = "";
+    new PdfReader().parseFileItems(pdfPath, (err, item) => {
+      if (err) reject(err);
+      else if (!item) resolve(text);
+      else if (item.text) text += item.text + " ";
+    });
+  });
+}
+
 // Middleware
-// ======================
 app.use(cors());
 app.use(express.json());
 app.use("/uploads", express.static("uploads"));
 
-// ======================
-// MongoDB Connection
-// ======================
+// MongoDB
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB Connected"))
   .catch((err) => console.log(err));
 
-// ======================
-// Multer Storage
-// ======================
+// Multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, "uploads/"),
   filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
 });
 const upload = multer({ storage });
 
-// ======================
 // Health Check
-// ======================
 app.get("/health", (req, res) => {
   res.json({
     status: "healthy",
@@ -50,23 +67,17 @@ app.get("/health", (req, res) => {
   });
 });
 
-// ======================
-// Home Route
-// ======================
+// Home
 app.get("/", (req, res) => {
   res.send("CloudNest Backend Running");
 });
 
-// ======================
-// Register User
-// ======================
+// Register
 app.post("/register", async (req, res) => {
   try {
     const { name, email, password } = req.body;
     const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ message: "User already exists" });
-    }
+    if (existingUser) return res.status(400).json({ message: "User already exists" });
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = await User.create({ name, email, password: hashedPassword });
     res.status(201).json({ message: "User Registered Successfully", user });
@@ -75,9 +86,7 @@ app.post("/register", async (req, res) => {
   }
 });
 
-// ======================
-// Login User
-// ======================
+// Login
 app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -92,9 +101,7 @@ app.post("/login", async (req, res) => {
   }
 });
 
-// ======================
 // Get Users
-// ======================
 app.get("/users", async (req, res) => {
   try {
     const users = await User.find().select("-password");
@@ -104,9 +111,7 @@ app.get("/users", async (req, res) => {
   }
 });
 
-// ======================
 // Upload File
-// ======================
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
@@ -120,9 +125,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
   }
 });
 
-// ======================
 // Get Documents
-// ======================
 app.get("/documents", async (req, res) => {
   try {
     const documents = await Document.find();
@@ -132,9 +135,7 @@ app.get("/documents", async (req, res) => {
   }
 });
 
-// ======================
 // Delete Document
-// ======================
 app.delete("/documents/:id", async (req, res) => {
   try {
     await Document.findByIdAndDelete(req.params.id);
@@ -144,9 +145,7 @@ app.delete("/documents/:id", async (req, res) => {
   }
 });
 
-// ======================
-// Ask AI About PDF
-// ======================
+// Ask AI with RAG
 app.post("/ask-ai", async (req, res) => {
   try {
     const { question } = req.body;
@@ -158,24 +157,42 @@ app.post("/ask-ai", async (req, res) => {
     const latestDocument = documents[documents.length - 1];
     const pdfPath = "./uploads/" + latestDocument.filepath;
 
-    let pdfText = "";
-    await new Promise((resolve, reject) => {
-      new PdfReader().parseFileItems(pdfPath, (err, item) => {
-        if (err) reject(err);
-        else if (!item) resolve();
-        else if (item.text) pdfText += item.text + " ";
-      });
+    // Step 1: Read PDF
+    const fullText = await readPDF(pdfPath);
+
+    // Step 2: Split into chunks (RAG)
+    const chunkTexts = splitTextIntoChunks(fullText, 1000, 200);
+    const chunks = chunkTexts.map(text => ({ pageContent: text }));
+
+    // Step 3: Find relevant chunks
+    const questionWords = question.toLowerCase().split(" ");
+    const scoredChunks = chunks.map(chunk => {
+      const content = chunk.pageContent.toLowerCase();
+      const score = questionWords.reduce((acc, word) => {
+        return acc + (content.includes(word) ? 1 : 0);
+      }, 0);
+      return { content: chunk.pageContent, score };
     });
 
+    // Step 4: Get top 3 relevant chunks
+    const topChunks = scoredChunks
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+      .map(c => c.content)
+      .join("\n\n---\n\n");
+
+    // Step 5: Ask Groq AI
     const prompt = `
 You are an AI assistant for CloudNest.
-Answer ONLY from the PDF content below.
-If answer is not in PDF, say "I don't have that information."
+Answer the question based ONLY on the context below.
+If the answer is not in the context, say "I don't have that information in the uploaded document."
 
-PDF Content:
-${pdfText}
+Context:
+${topChunks}
 
 Question: ${question}
+
+Give a clear, detailed answer.
 `;
 
     const completion = await groq.chat.completions.create({
@@ -184,17 +201,15 @@ Question: ${question}
     });
 
     const answer = completion.choices[0].message.content;
-    res.json({ answer });
+    res.json({ answer, chunksUsed: 3, totalChunks: chunks.length });
 
   } catch (error) {
-    console.log("FULL ERROR:", error);
+    console.log("RAG ERROR:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// ======================
 // Start Server
-// ======================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

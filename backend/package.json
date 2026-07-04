@@ -23,6 +23,7 @@
     "mongoose": "^9.7.1",
     "multer": "^2.2.0",
     "openai": "^6.43.0",
+    "pdf-parse": "^2.4.5",
     "pdfreader": "^3.0.8"
   }
 }
