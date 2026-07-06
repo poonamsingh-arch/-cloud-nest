@@ -148,13 +148,25 @@ app.delete("/documents/:id", async (req, res) => {
 // Ask AI with RAG
 app.post("/ask-ai", async (req, res) => {
   try {
-    const { question } = req.body;
+const { question, documentId } = req.body;
+    
     if (!question) return res.status(400).json({ message: "Question is required" });
 
     const documents = await Document.find();
     if (documents.length === 0) return res.status(400).json({ message: "No documents uploaded" });
 
-    const latestDocument = documents[documents.length - 1];
+
+
+const latestDocument = documentId 
+  ? documents.find(d => d._id.toString() === documentId)
+  : documents[documents.length - 1];
+
+if (!latestDocument) return res.status(400).json({ message: "Document not found" });
+   
+
+
+
+
     const pdfPath = "./uploads/" + latestDocument.filepath;
 
     // Step 1: Read PDF

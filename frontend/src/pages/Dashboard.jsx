@@ -9,6 +9,7 @@ export default function Dashboard() {
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [selectedDocId, setSelectedDocId] = useState("");
   const navigate = useNavigate();
 
   useEffect(() => { fetchDocuments(); }, []);
@@ -34,7 +35,10 @@ export default function Dashboard() {
     setLoading(true);
     setAnswer("");
     try {
-      const res = await axios.post("http://localhost:3000/ask-ai", { question });
+      const res = await axios.post("http://localhost:3000/ask-ai", {
+        question,
+        documentId: selectedDocId
+      });
       setAnswer(res.data.answer);
     } catch (err) {
       setAnswer("Error: " + err.response?.data?.error);
@@ -68,7 +72,6 @@ export default function Dashboard() {
       fontFamily: "system-ui, sans-serif",
       color: "white"
     }}>
-      {/* Navbar */}
       <nav style={{
         background: "rgba(255,255,255,0.03)",
         borderBottom: "1px solid rgba(255,255,255,0.08)",
@@ -83,9 +86,9 @@ export default function Dashboard() {
             background: "linear-gradient(135deg, #3b82f6, #1d4ed8)",
             borderRadius: "10px",
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: "18px",
+            fontSize: "14px", fontWeight: "700", color: "white",
             boxShadow: "0 0 20px rgba(59,130,246,0.4)"
-          }}>☁️</div>
+          }}>CN</div>
           <span style={{ fontWeight: "700", fontSize: "18px" }}>CloudNest</span>
           <span style={{
             background: "rgba(59,130,246,0.2)",
@@ -108,31 +111,26 @@ export default function Dashboard() {
       </nav>
 
       <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "32px 24px" }}>
-        {/* Header */}
         <div style={{ marginBottom: "32px" }}>
-          <h1 style={{ fontSize: "28px", fontWeight: "700", margin: "0 0 8px" }}>
-            Welcome to CloudNest 👋
-          </h1>
-          <p style={{ color: "#64748b", margin: 0 }}>
-            Upload documents and chat with AI instantly
-          </p>
+          <h1 style={{ fontSize: "28px", fontWeight: "700", margin: "0 0 8px" }}>Welcome to CloudNest</h1>
+          <p style={{ color: "#64748b", margin: 0 }}>Upload documents and chat with AI instantly</p>
         </div>
 
-        {/* Stats Row */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "32px" }}>
           {[
-            { label: "Documents", value: documents.length, icon: "📄", color: "#3b82f6" },
-            { label: "AI Ready", value: "Active", icon: "🤖", color: "#10b981" },
-            { label: "Storage", value: "Cloud", icon: "☁️", color: "#8b5cf6" }
+            { label: "Documents", value: documents.length, color: "#3b82f6" },
+            { label: "AI Ready", value: "Active", color: "#10b981" },
+            { label: "Storage", value: "Cloud", color: "#8b5cf6" }
           ].map((stat) => (
             <div key={stat.label} style={{ ...cardStyle, display: "flex", alignItems: "center", gap: "16px" }}>
               <div style={{
                 width: "48px", height: "48px",
                 background: stat.color + "20",
                 borderRadius: "12px",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: "22px"
-              }}>{stat.icon}</div>
+                display: "flex", alignItems: "center", justifyContent: "center"
+              }}>
+                <div style={{ width: "20px", height: "20px", background: stat.color, borderRadius: "4px" }}></div>
+              </div>
               <div>
                 <p style={{ color: "#64748b", fontSize: "12px", margin: "0 0 4px" }}>{stat.label}</p>
                 <p style={{ fontWeight: "700", fontSize: "20px", margin: 0 }}>{stat.value}</p>
@@ -142,13 +140,9 @@ export default function Dashboard() {
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "24px" }}>
-          {/* Left Column */}
           <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-            {/* Upload Card */}
             <div style={cardStyle}>
-              <h2 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 16px", display: "flex", alignItems: "center", gap: "8px" }}>
-                📤 Upload Document
-              </h2>
+              <h2 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 16px" }}>Upload Document</h2>
               <div
                 onClick={() => document.getElementById("fileInput").click()}
                 style={{
@@ -157,11 +151,9 @@ export default function Dashboard() {
                   padding: "24px",
                   textAlign: "center",
                   cursor: "pointer",
-                  marginBottom: "12px",
-                  transition: "all 0.2s"
+                  marginBottom: "12px"
                 }}
               >
-                <div style={{ fontSize: "32px", marginBottom: "8px" }}>📁</div>
                 <p style={{ color: "#64748b", fontSize: "13px", margin: 0 }}>
                   {file ? file.name : "Click to select PDF"}
                 </p>
@@ -187,10 +179,9 @@ export default function Dashboard() {
               </button>
             </div>
 
-            {/* Documents List */}
             <div style={cardStyle}>
-              <h2 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 16px", display: "flex", alignItems: "center", gap: "8px" }}>
-                📄 Documents ({documents.length})
+              <h2 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 16px" }}>
+                Documents ({documents.length})
               </h2>
               {documents.length === 0 ? (
                 <p style={{ color: "#64748b", fontSize: "13px", textAlign: "center", padding: "20px 0" }}>
@@ -217,26 +208,80 @@ export default function Dashboard() {
                           color: "#f87171",
                           fontWeight: "700"
                         }}>PDF</div>
-                        <span style={{ fontSize: "13px", color: "#cbd5e1" }}>{doc.filename}</span>
+                        <span style={{ fontSize: "12px", color: "#cbd5e1" }}>{doc.filename}</span>
                       </div>
-                      <button onClick={() => handleDelete(doc._id)} style={{
-                        background: "none", border: "none",
-                        color: "#64748b", cursor: "pointer", fontSize: "16px"
-                      }}>🗑️</button>
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <a
+                          href={"http://localhost:3000/uploads/" + doc.filepath}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            color: "#60a5fa",
+                            cursor: "pointer",
+                            fontSize: "12px",
+                            textDecoration: "none",
+                            padding: "4px 8px",
+                            background: "rgba(59,130,246,0.1)",
+                            borderRadius: "6px",
+                            border: "1px solid rgba(59,130,246,0.2)"
+                          }}
+                        >View</a>
+                        <button
+                          onClick={() => handleDelete(doc._id)}
+                          style={{
+                            background: "rgba(239,68,68,0.1)",
+                            border: "1px solid rgba(239,68,68,0.2)",
+                            color: "#f87171",
+                            cursor: "pointer",
+                            fontSize: "12px",
+                            padding: "4px 8px",
+                            borderRadius: "6px"
+                          }}
+                        >Delete</button>
+                      </div>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {documents.length > 0 && (
+                <div style={{
+                  marginTop: "16px",
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: "12px",
+                  padding: "12px 16px"
+                }}>
+                  <p style={{ color: "#64748b", fontSize: "12px", margin: "0 0 8px" }}>Ask AI about:</p>
+                  <select
+                    value={selectedDocId}
+                    onChange={(e) => setSelectedDocId(e.target.value)}
+                    style={{
+                      width: "100%",
+                      background: "rgba(0,0,0,0.3)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      borderRadius: "8px",
+                      padding: "8px 12px",
+                      color: "white",
+                      fontSize: "13px",
+                      outline: "none",
+                      cursor: "pointer"
+                    }}
+                  >
+                    <option value="">Latest document</option>
+                    {documents.map((doc) => (
+                      <option key={doc._id} value={doc._id}>{doc.filename}</option>
+                    ))}
+                  </select>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Right Column - AI Chat */}
           <div style={cardStyle}>
-            <h2 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 16px", display: "flex", alignItems: "center", gap: "8px" }}>
-              🤖 Ask AI About Your Documents
+            <h2 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 16px" }}>
+              Ask AI About Your Documents
             </h2>
-
-            {/* Answer Area */}
             <div style={{
               background: "rgba(0,0,0,0.2)",
               borderRadius: "12px",
@@ -246,12 +291,9 @@ export default function Dashboard() {
               border: "1px solid rgba(255,255,255,0.05)"
             }}>
               {loading ? (
-                <div style={{ display: "flex", alignItems: "center", gap: "12px", color: "#64748b" }}>
-                  <div style={{ fontSize: "24px" }}>🤔</div>
-                  <div>
-                    <p style={{ margin: "0 0 4px", color: "#60a5fa" }}>AI is thinking...</p>
-                    <p style={{ margin: 0, fontSize: "13px" }}>Analyzing your documents</p>
-                  </div>
+                <div>
+                  <p style={{ color: "#60a5fa", margin: "0 0 4px" }}>AI is thinking...</p>
+                  <p style={{ margin: 0, fontSize: "13px", color: "#64748b" }}>Analyzing your documents</p>
                 </div>
               ) : answer ? (
                 <div>
@@ -261,23 +303,20 @@ export default function Dashboard() {
                       background: "linear-gradient(135deg, #8b5cf6, #6d28d9)",
                       borderRadius: "50%",
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: "14px"
-                    }}>🤖</div>
+                      fontSize: "12px", color: "white", fontWeight: "700"
+                    }}>AI</div>
                     <span style={{ color: "#a78bfa", fontWeight: "600", fontSize: "14px" }}>AI Answer</span>
                   </div>
                   <p style={{ color: "#e2e8f0", lineHeight: "1.7", fontSize: "14px", margin: 0 }}>{answer}</p>
                 </div>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "260px", textAlign: "center" }}>
-                  <div style={{ fontSize: "48px", marginBottom: "16px" }}>💬</div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "260px" }}>
                   <p style={{ color: "#475569", fontSize: "14px", margin: 0 }}>
                     Upload a PDF and ask any question about it
                   </p>
                 </div>
               )}
             </div>
-
-            {/* Input */}
             <div style={{ display: "flex", gap: "12px" }}>
               <input
                 type="text"
@@ -310,9 +349,7 @@ export default function Dashboard() {
                   fontSize: "14px",
                   boxShadow: question ? "0 0 20px rgba(59,130,246,0.4)" : "none"
                 }}
-              >
-                Ask AI 🚀
-              </button>
+              >Ask AI</button>
             </div>
           </div>
         </div>
