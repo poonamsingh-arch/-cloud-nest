@@ -12,10 +12,13 @@ export default function Dashboard() {
   const [selectedDocId, setSelectedDocId] = useState("");
   const navigate = useNavigate();
 
+  const token = localStorage.getItem("token");
+  const headers = { Authorization: `Bearer ${token}` };
+
   useEffect(() => { fetchDocuments(); }, []);
 
   const fetchDocuments = async () => {
-    const res = await axios.get("http://localhost:3000/documents");
+    const res = await axios.get("http://localhost:3000/documents", { headers });
     setDocuments(res.data);
   };
 
@@ -24,7 +27,7 @@ export default function Dashboard() {
     setUploading(true);
     const formData = new FormData();
     formData.append("file", file);
-    await axios.post("http://localhost:3000/upload", formData);
+    await axios.post("http://localhost:3000/upload", formData, { headers });
     setFile(null);
     fetchDocuments();
     setUploading(false);
@@ -38,7 +41,7 @@ export default function Dashboard() {
       const res = await axios.post("http://localhost:3000/ask-ai", {
         question,
         documentId: selectedDocId
-      });
+      }, { headers });
       setAnswer(res.data.answer);
     } catch (err) {
       setAnswer("Error: " + err.response?.data?.error);
@@ -47,7 +50,7 @@ export default function Dashboard() {
   };
 
   const handleDelete = async (id) => {
-    await axios.delete(`http://localhost:3000/documents/${id}`);
+    await axios.delete(`http://localhost:3000/documents/${id}`, { headers });
     fetchDocuments();
   };
 
@@ -118,7 +121,7 @@ export default function Dashboard() {
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "32px" }}>
           {[
-            { label: "Documents", value: documents.length, color: "#3b82f6" },
+            { label: "My Documents", value: documents.length, color: "#3b82f6" },
             { label: "AI Ready", value: "Active", color: "#10b981" },
             { label: "Storage", value: "Cloud", color: "#8b5cf6" }
           ].map((stat) => (
@@ -181,7 +184,7 @@ export default function Dashboard() {
 
             <div style={cardStyle}>
               <h2 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 16px" }}>
-                Documents ({documents.length})
+                My Documents ({documents.length})
               </h2>
               {documents.length === 0 ? (
                 <p style={{ color: "#64748b", fontSize: "13px", textAlign: "center", padding: "20px 0" }}>

@@ -15,6 +15,14 @@ const Document = require("./models/Document");
 const app = express();
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+// Analytics tracker
+let analytics = {
+  totalRequests: 0,
+  aiQuestions: 0,
+  documentsUploaded: 0,
+  serverStartTime: new Date()
+};
+
 // Simple text splitter
 function splitTextIntoChunks(text, chunkSize = 1000, overlap = 200) {
   const chunks = [];
@@ -39,10 +47,29 @@ function readPDF(pdfPath) {
   });
 }
 
+// Auth middleware
+function authMiddleware(req, res, next) {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(401).json({ message: "No token provided" });
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.userId = decoded.id;
+    next();
+  } catch (error) {
+    res.status(401).json({ message: "Invalid token" });
+  }
+}
+
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use("/uploads", express.static("uploads"));
+
+// Analytics middleware
+app.use((req, res, next) => {
+  analytics.totalRequests++;
+  next();
+});
 
 // MongoDB
 mongoose
@@ -64,6 +91,18 @@ app.get("/health", (req, res) => {
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
     mongodb: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+  });
+});
+
+// Analytics
+app.get("/analytics", (req, res) => {
+  const uptimeMinutes = Math.floor((new Date() - analytics.serverStartTime) / 1000 / 60);
+  res.json({
+    totalRequests: analytics.totalRequests,
+    aiQuestions: analytics.aiQuestions,
+    documentsUploaded: analytics.documentsUploaded,
+    uptimeMinutes,
+    serverStartTime: analytics.serverStartTime
   });
 });
 
@@ -111,33 +150,37 @@ app.get("/users", async (req, res) => {
   }
 });
 
-// Upload File
-app.post("/upload", upload.single("file"), async (req, res) => {
+// Upload File - now user specific
+app.post("/upload", authMiddleware, upload.single("file"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
     const document = await Document.create({
       filename: req.file.originalname,
       filepath: req.file.filename,
+      userId: req.userId
     });
+    analytics.documentsUploaded++;
     res.status(201).json({ message: "File Uploaded Successfully", document });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get Documents
-app.get("/documents", async (req, res) => {
+// Get Documents - only user's own documents
+app.get("/documents", authMiddleware, async (req, res) => {
   try {
-    const documents = await Document.find();
+    const documents = await Document.find({ userId: req.userId });
     res.json(documents);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Delete Document
-app.delete("/documents/:id", async (req, res) => {
+// Delete Document - only user's own document
+app.delete("/documents/:id", authMiddleware, async (req, res) => {
   try {
+    const document = await Document.findOne({ _id: req.params.id, userId: req.userId });
+    if (!document) return res.status(404).json({ message: "Document not found" });
     await Document.findByIdAndDelete(req.params.id);
     res.json({ message: "Document Deleted Successfully" });
   } catch (error) {
@@ -145,38 +188,33 @@ app.delete("/documents/:id", async (req, res) => {
   }
 });
 
-// Ask AI with RAG
-app.post("/ask-ai", async (req, res) => {
+// Ask AI with RAG - user specific
+app.post("/ask-ai", authMiddleware, async (req, res) => {
   try {
-const { question, documentId } = req.body;
-    
+    const { question, documentId } = req.body;
+    analytics.aiQuestions++;
+
     if (!question) return res.status(400).json({ message: "Question is required" });
 
-    const documents = await Document.find();
+    const documents = await Document.find({ userId: req.userId });
     if (documents.length === 0) return res.status(400).json({ message: "No documents uploaded" });
 
+    const latestDocument = documentId
+      ? documents.find(d => d._id.toString() === documentId)
+      : documents[documents.length - 1];
 
-
-const latestDocument = documentId 
-  ? documents.find(d => d._id.toString() === documentId)
-  : documents[documents.length - 1];
-
-if (!latestDocument) return res.status(400).json({ message: "Document not found" });
-   
-
-
-
+    if (!latestDocument) return res.status(400).json({ message: "Document not found" });
 
     const pdfPath = "./uploads/" + latestDocument.filepath;
 
-    // Step 1: Read PDF
+    // Read PDF
     const fullText = await readPDF(pdfPath);
 
-    // Step 2: Split into chunks (RAG)
+    // Split into chunks (RAG)
     const chunkTexts = splitTextIntoChunks(fullText, 1000, 200);
     const chunks = chunkTexts.map(text => ({ pageContent: text }));
 
-    // Step 3: Find relevant chunks
+    // Find relevant chunks
     const questionWords = question.toLowerCase().split(" ");
     const scoredChunks = chunks.map(chunk => {
       const content = chunk.pageContent.toLowerCase();
@@ -186,14 +224,13 @@ if (!latestDocument) return res.status(400).json({ message: "Document not found"
       return { content: chunk.pageContent, score };
     });
 
-    // Step 4: Get top 3 relevant chunks
+    // Get top 3 relevant chunks
     const topChunks = scoredChunks
       .sort((a, b) => b.score - a.score)
       .slice(0, 3)
       .map(c => c.content)
       .join("\n\n---\n\n");
 
-    // Step 5: Ask Groq AI
     const prompt = `
 You are an AI assistant for CloudNest.
 Answer the question based ONLY on the context below.
