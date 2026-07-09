@@ -4,24 +4,17 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const multer = require("multer");
-const fs = require("fs");
 const { PdfReader } = require("pdfreader");
 const Groq = require("groq-sdk");
 require("dotenv").config();
 
 const User = require("./models/User");
 const Document = require("./models/Document");
+const Analytics = require("./models/Analytics");
 
 const app = express();
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
-// Analytics tracker
-let analytics = {
-  totalRequests: 0,
-  aiQuestions: 0,
-  documentsUploaded: 0,
-  serverStartTime: new Date()
-};
+const serverStartTime = new Date();
 
 // Simple text splitter
 function splitTextIntoChunks(text, chunkSize = 1000, overlap = 200) {
@@ -35,7 +28,7 @@ function splitTextIntoChunks(text, chunkSize = 1000, overlap = 200) {
   return chunks;
 }
 
-// Read PDF using pdfreader
+// Read PDF
 function readPDF(pdfPath) {
   return new Promise((resolve, reject) => {
     let text = "";
@@ -65,9 +58,15 @@ app.use(cors());
 app.use(express.json());
 app.use("/uploads", express.static("uploads"));
 
-// Analytics middleware
-app.use((req, res, next) => {
-  analytics.totalRequests++;
+// Track every request in MongoDB
+app.use(async (req, res, next) => {
+  try {
+    await Analytics.findOneAndUpdate(
+      {},
+      { $inc: { totalRequests: 1 }, lastUpdated: new Date() },
+      { upsert: true }
+    );
+  } catch (e) {}
   next();
 });
 
@@ -94,16 +93,21 @@ app.get("/health", (req, res) => {
   });
 });
 
-// Analytics
-app.get("/analytics", (req, res) => {
-  const uptimeMinutes = Math.floor((new Date() - analytics.serverStartTime) / 1000 / 60);
-  res.json({
-    totalRequests: analytics.totalRequests,
-    aiQuestions: analytics.aiQuestions,
-    documentsUploaded: analytics.documentsUploaded,
-    uptimeMinutes,
-    serverStartTime: analytics.serverStartTime
-  });
+// Analytics - now from MongoDB
+app.get("/analytics", async (req, res) => {
+  try {
+    const data = await Analytics.findOne({});
+    const uptimeMinutes = Math.floor((new Date() - serverStartTime) / 1000 / 60);
+    res.json({
+      totalRequests: data?.totalRequests || 0,
+      aiQuestions: data?.aiQuestions || 0,
+      documentsUploaded: data?.documentsUploaded || 0,
+      uptimeMinutes,
+      serverStartTime
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Home
@@ -150,7 +154,7 @@ app.get("/users", async (req, res) => {
   }
 });
 
-// Upload File - now user specific
+// Upload File
 app.post("/upload", authMiddleware, upload.single("file"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
@@ -159,14 +163,18 @@ app.post("/upload", authMiddleware, upload.single("file"), async (req, res) => {
       filepath: req.file.filename,
       userId: req.userId
     });
-    analytics.documentsUploaded++;
+    await Analytics.findOneAndUpdate(
+      {},
+      { $inc: { documentsUploaded: 1 } },
+      { upsert: true }
+    );
     res.status(201).json({ message: "File Uploaded Successfully", document });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get Documents - only user's own documents
+// Get Documents
 app.get("/documents", authMiddleware, async (req, res) => {
   try {
     const documents = await Document.find({ userId: req.userId });
@@ -176,7 +184,7 @@ app.get("/documents", authMiddleware, async (req, res) => {
   }
 });
 
-// Delete Document - only user's own document
+// Delete Document
 app.delete("/documents/:id", authMiddleware, async (req, res) => {
   try {
     const document = await Document.findOne({ _id: req.params.id, userId: req.userId });
@@ -188,11 +196,10 @@ app.delete("/documents/:id", authMiddleware, async (req, res) => {
   }
 });
 
-// Ask AI with RAG - user specific
+// Ask AI with RAG
 app.post("/ask-ai", authMiddleware, async (req, res) => {
   try {
     const { question, documentId } = req.body;
-    analytics.aiQuestions++;
 
     if (!question) return res.status(400).json({ message: "Question is required" });
 
@@ -206,15 +213,11 @@ app.post("/ask-ai", authMiddleware, async (req, res) => {
     if (!latestDocument) return res.status(400).json({ message: "Document not found" });
 
     const pdfPath = "./uploads/" + latestDocument.filepath;
-
-    // Read PDF
     const fullText = await readPDF(pdfPath);
 
-    // Split into chunks (RAG)
     const chunkTexts = splitTextIntoChunks(fullText, 1000, 200);
     const chunks = chunkTexts.map(text => ({ pageContent: text }));
 
-    // Find relevant chunks
     const questionWords = question.toLowerCase().split(" ");
     const scoredChunks = chunks.map(chunk => {
       const content = chunk.pageContent.toLowerCase();
@@ -224,7 +227,6 @@ app.post("/ask-ai", authMiddleware, async (req, res) => {
       return { content: chunk.pageContent, score };
     });
 
-    // Get top 3 relevant chunks
     const topChunks = scoredChunks
       .sort((a, b) => b.score - a.score)
       .slice(0, 3)
@@ -250,6 +252,14 @@ Give a clear, detailed answer.
     });
 
     const answer = completion.choices[0].message.content;
+
+    // Save AI question count to MongoDB
+    await Analytics.findOneAndUpdate(
+      {},
+      { $inc: { aiQuestions: 1 } },
+      { upsert: true }
+    );
+
     res.json({ answer, chunksUsed: 3, totalChunks: chunks.length });
 
   } catch (error) {

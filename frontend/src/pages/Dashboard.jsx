@@ -10,16 +10,32 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [selectedDocId, setSelectedDocId] = useState("");
+  const [analyticsData, setAnalyticsData] = useState(null);
+  const [totalUsers, setTotalUsers] = useState(0);
   const navigate = useNavigate();
 
   const token = localStorage.getItem("token");
   const headers = { Authorization: `Bearer ${token}` };
 
-  useEffect(() => { fetchDocuments(); }, []);
+  useEffect(() => {
+    fetchDocuments();
+    fetchAnalytics();
+    fetchUsers();
+  }, []);
 
   const fetchDocuments = async () => {
     const res = await axios.get("http://localhost:3000/documents", { headers });
     setDocuments(res.data);
+  };
+
+  const fetchAnalytics = async () => {
+    const res = await axios.get("http://localhost:3000/analytics");
+    setAnalyticsData(res.data);
+  };
+
+  const fetchUsers = async () => {
+    const res = await axios.get("http://localhost:3000/users");
+    setTotalUsers(res.data.length);
   };
 
   const handleUpload = async () => {
@@ -30,6 +46,7 @@ export default function Dashboard() {
     await axios.post("http://localhost:3000/upload", formData, { headers });
     setFile(null);
     fetchDocuments();
+    fetchAnalytics();
     setUploading(false);
   };
 
@@ -43,6 +60,7 @@ export default function Dashboard() {
         documentId: selectedDocId
       }, { headers });
       setAnswer(res.data.answer);
+      fetchAnalytics();
     } catch (err) {
       setAnswer("Error: " + err.response?.data?.error);
     }
@@ -119,21 +137,24 @@ export default function Dashboard() {
           <p style={{ color: "#64748b", margin: 0 }}>Upload documents and chat with AI instantly</p>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "32px" }}>
+        {/* Analytics Stats Row */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: "32px" }}>
           {[
-            { label: "My Documents", value: documents.length, color: "#3b82f6" },
-            { label: "AI Ready", value: "Active", color: "#10b981" },
-            { label: "Storage", value: "Cloud", color: "#8b5cf6" }
+            { label: "My Documents", value: documents.length, color: "#3b82f6", icon: "D" },
+            { label: "Total Users", value: totalUsers, color: "#10b981", icon: "U" },
+            { label: "AI Questions", value: analyticsData?.aiQuestions || 0, color: "#8b5cf6", icon: "Q" },
+            { label: "Uptime (min)", value: analyticsData?.uptimeMinutes || 0, color: "#f59e0b", icon: "T" }
           ].map((stat) => (
             <div key={stat.label} style={{ ...cardStyle, display: "flex", alignItems: "center", gap: "16px" }}>
               <div style={{
                 width: "48px", height: "48px",
                 background: stat.color + "20",
                 borderRadius: "12px",
-                display: "flex", alignItems: "center", justifyContent: "center"
-              }}>
-                <div style={{ width: "20px", height: "20px", background: stat.color, borderRadius: "4px" }}></div>
-              </div>
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: stat.color,
+                fontWeight: "700",
+                fontSize: "16px"
+              }}>{stat.icon}</div>
               <div>
                 <p style={{ color: "#64748b", fontSize: "12px", margin: "0 0 4px" }}>{stat.label}</p>
                 <p style={{ fontWeight: "700", fontSize: "20px", margin: 0 }}>{stat.value}</p>
