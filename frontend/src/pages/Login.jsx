@@ -14,11 +14,11 @@ export default function Login() {
     setError("");
     try {
       if (isRegister) {
-        await axios.post("http://localhost:3000/register", form);
+        await axios.post("https://cloudnest-backend-wpop.onrender.com/register", form);
         setIsRegister(false);
         setError("Registered successfully! Please login.");
       } else {
-        const res = await axios.post("http://localhost:3000/login", form);
+        const res = await axios.post("https://cloudnest-backend-wpop.onrender.com/login", form);
         localStorage.setItem("token", res.data.token);
         navigate("/dashboard");
       }

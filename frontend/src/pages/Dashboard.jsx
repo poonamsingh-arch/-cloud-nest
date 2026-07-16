@@ -24,17 +24,17 @@ export default function Dashboard() {
   }, []);
 
   const fetchDocuments = async () => {
-    const res = await axios.get("http://localhost:3000/documents", { headers });
+    const res = await axios.get("https://cloudnest-backend-wpop.onrender.com/documents", { headers });
     setDocuments(res.data);
   };
 
   const fetchAnalytics = async () => {
-    const res = await axios.get("http://localhost:3000/analytics");
+    const res = await axios.get("https://cloudnest-backend-wpop.onrender.com/analytics");
     setAnalyticsData(res.data);
   };
 
   const fetchUsers = async () => {
-    const res = await axios.get("http://localhost:3000/users");
+    const res = await axios.get("https://cloudnest-backend-wpop.onrender.com/users");
     setTotalUsers(res.data.length);
   };
 
@@ -43,7 +43,7 @@ export default function Dashboard() {
     setUploading(true);
     const formData = new FormData();
     formData.append("file", file);
-    await axios.post("http://localhost:3000/upload", formData, { headers });
+    await axios.post("https://cloudnest-backend-wpop.onrender.com/upload", formData, { headers });
     setFile(null);
     fetchDocuments();
     fetchAnalytics();
@@ -55,7 +55,7 @@ export default function Dashboard() {
     setLoading(true);
     setAnswer("");
     try {
-      const res = await axios.post("http://localhost:3000/ask-ai", {
+      const res = await axios.post("https://cloudnest-backend-wpop.onrender.com/ask-ai", {
         question,
         documentId: selectedDocId
       }, { headers });
@@ -68,7 +68,7 @@ export default function Dashboard() {
   };
 
   const handleDelete = async (id) => {
-    await axios.delete(`http://localhost:3000/documents/${id}`, { headers });
+    await axios.delete(`https://cloudnest-backend-wpop.onrender.com/documents/${id}`, { headers });
     fetchDocuments();
   };
 
@@ -236,7 +236,7 @@ export default function Dashboard() {
                       </div>
                       <div style={{ display: "flex", gap: "8px" }}>
                         <a
-                          href={"http://localhost:3000/uploads/" + doc.filepath}
+                          href={"https://cloudnest-backend-wpop.onrender.com/uploads/" + doc.filepath}
                           target="_blank"
                           rel="noreferrer"
                           style={{
