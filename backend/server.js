@@ -6,16 +6,37 @@ const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const { PdfReader } = require("pdfreader");
 const Groq = require("groq-sdk");
+const cloudinary = require("cloudinary").v2;
+const { CloudinaryStorage } = require("multer-storage-cloudinary");
 require("dotenv").config();
-
+ 
 const User = require("./models/User");
 const Document = require("./models/Document");
 const Analytics = require("./models/Analytics");
-
+ 
 const app = express();
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const serverStartTime = new Date();
-
+ 
+// Cloudinary config
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+ 
+// Cloudinary storage for multer
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "cloudnest",
+    resource_type: "raw",
+    allowed_formats: ["pdf"],
+  },
+});
+ 
+const upload = multer({ storage });
+ 
 // Simple text splitter
 function splitTextIntoChunks(text, chunkSize = 1000, overlap = 200) {
   const chunks = [];
@@ -27,19 +48,31 @@ function splitTextIntoChunks(text, chunkSize = 1000, overlap = 200) {
   }
   return chunks;
 }
-
-// Read PDF
-function readPDF(pdfPath) {
+ 
+// Read PDF from URL
+async function readPDFFromUrl(url) {
+  const https = require("https");
+  const http = require("http");
+  
   return new Promise((resolve, reject) => {
-    let text = "";
-    new PdfReader().parseFileItems(pdfPath, (err, item) => {
-      if (err) reject(err);
-      else if (!item) resolve(text);
-      else if (item.text) text += item.text + " ";
+    const client = url.startsWith("https") ? https : http;
+    client.get(url, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => {
+        const buffer = Buffer.concat(chunks);
+        let text = "";
+        new PdfReader().parseBuffer(buffer, (err, item) => {
+          if (err) reject(err);
+          else if (!item) resolve(text);
+          else if (item.text) text += item.text + " ";
+        });
+      });
+      response.on("error", reject);
     });
   });
 }
-
+ 
 // Auth middleware
 function authMiddleware(req, res, next) {
   try {
@@ -52,13 +85,12 @@ function authMiddleware(req, res, next) {
     res.status(401).json({ message: "Invalid token" });
   }
 }
-
+ 
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use("/uploads", express.static("uploads"));
-
-// Track every request in MongoDB
+ 
+// Track every request
 app.use(async (req, res, next) => {
   try {
     await Analytics.findOneAndUpdate(
@@ -69,20 +101,13 @@ app.use(async (req, res, next) => {
   } catch (e) {}
   next();
 });
-
+ 
 // MongoDB
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB Connected"))
   .catch((err) => console.log(err));
-
-// Multer
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "uploads/"),
-  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
-});
-const upload = multer({ storage });
-
+ 
 // Health Check
 app.get("/health", (req, res) => {
   res.json({
@@ -92,8 +117,8 @@ app.get("/health", (req, res) => {
     mongodb: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
   });
 });
-
-// Analytics - now from MongoDB
+ 
+// Analytics
 app.get("/analytics", async (req, res) => {
   try {
     const data = await Analytics.findOne({});
@@ -109,12 +134,12 @@ app.get("/analytics", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
+ 
 // Home
 app.get("/", (req, res) => {
   res.send("CloudNest Backend Running");
 });
-
+ 
 // Register
 app.post("/register", async (req, res) => {
   try {
@@ -128,7 +153,7 @@ app.post("/register", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
+ 
 // Login
 app.post("/login", async (req, res) => {
   try {
@@ -143,7 +168,7 @@ app.post("/login", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
+ 
 // Get Users
 app.get("/users", async (req, res) => {
   try {
@@ -153,27 +178,32 @@ app.get("/users", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
-// Upload File
+ 
+// Upload File to Cloudinary
 app.post("/upload", authMiddleware, upload.single("file"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+    
     const document = await Document.create({
       filename: req.file.originalname,
-      filepath: req.file.filename,
+      filepath: req.file.path,
+      cloudinaryUrl: req.file.path,
       userId: req.userId
     });
+    
     await Analytics.findOneAndUpdate(
       {},
       { $inc: { documentsUploaded: 1 } },
       { upsert: true }
     );
+    
     res.status(201).json({ message: "File Uploaded Successfully", document });
   } catch (error) {
+    console.log("Upload error:", error);
     res.status(500).json({ error: error.message });
   }
 });
-
+ 
 // Get Documents
 app.get("/documents", authMiddleware, async (req, res) => {
   try {
@@ -183,7 +213,7 @@ app.get("/documents", authMiddleware, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
+ 
 // Delete Document
 app.delete("/documents/:id", authMiddleware, async (req, res) => {
   try {
@@ -195,29 +225,29 @@ app.delete("/documents/:id", authMiddleware, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
+ 
 // Ask AI with RAG
 app.post("/ask-ai", authMiddleware, async (req, res) => {
   try {
     const { question, documentId } = req.body;
-
+ 
     if (!question) return res.status(400).json({ message: "Question is required" });
-
+ 
     const documents = await Document.find({ userId: req.userId });
     if (documents.length === 0) return res.status(400).json({ message: "No documents uploaded" });
-
+ 
     const latestDocument = documentId
       ? documents.find(d => d._id.toString() === documentId)
       : documents[documents.length - 1];
-
+ 
     if (!latestDocument) return res.status(400).json({ message: "Document not found" });
-
-    const pdfPath = "./uploads/" + latestDocument.filepath;
-    const fullText = await readPDF(pdfPath);
-
+ 
+    // Read PDF from Cloudinary URL
+    const fullText = await readPDFFromUrl(latestDocument.cloudinaryUrl || latestDocument.filepath);
+ 
     const chunkTexts = splitTextIntoChunks(fullText, 1000, 200);
     const chunks = chunkTexts.map(text => ({ pageContent: text }));
-
+ 
     const questionWords = question.toLowerCase().split(" ");
     const scoredChunks = chunks.map(chunk => {
       const content = chunk.pageContent.toLowerCase();
@@ -226,48 +256,47 @@ app.post("/ask-ai", authMiddleware, async (req, res) => {
       }, 0);
       return { content: chunk.pageContent, score };
     });
-
+ 
     const topChunks = scoredChunks
       .sort((a, b) => b.score - a.score)
       .slice(0, 3)
       .map(c => c.content)
       .join("\n\n---\n\n");
-
+ 
     const prompt = `
 You are an AI assistant for CloudNest.
 Answer the question based ONLY on the context below.
 If the answer is not in the context, say "I don't have that information in the uploaded document."
-
+ 
 Context:
 ${topChunks}
-
+ 
 Question: ${question}
-
+ 
 Give a clear, detailed answer.
 `;
-
+ 
     const completion = await groq.chat.completions.create({
       messages: [{ role: "user", content: prompt }],
       model: "llama-3.3-70b-versatile",
     });
-
+ 
     const answer = completion.choices[0].message.content;
-
-    // Save AI question count to MongoDB
+ 
     await Analytics.findOneAndUpdate(
       {},
       { $inc: { aiQuestions: 1 } },
       { upsert: true }
     );
-
+ 
     res.json({ answer, chunksUsed: 3, totalChunks: chunks.length });
-
+ 
   } catch (error) {
     console.log("RAG ERROR:", error);
     res.status(500).json({ error: error.message });
   }
 });
-
+ 
 // Start Server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
