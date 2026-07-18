@@ -236,7 +236,7 @@ export default function Dashboard() {
                       </div>
                       <div style={{ display: "flex", gap: "8px" }}>
                         <a
-                          href={"https://cloudnest-backend-wpop.onrender.com/uploads/" + doc.filepath}
+                          href={doc.cloudinaryUrl || doc.filepath}
                           target="_blank"
                           rel="noreferrer"
                           style={{
